@@ -1,0 +1,367 @@
+{
+  "by_type": [
+    {
+      "contest_type": "regional",
+      "contests": 56,
+      "rows": 102771,
+      "share_of_rows": 0.31131972591286644,
+      "base_rate": 0.32060600753130747,
+      "brier_M6": 0.1567706546077652,
+      "brier_M7": 0.1567777017852001,
+      "skill_M7": 0.2802346500216534,
+      "auc_M7": 0.8162876812129025,
+      "mean_p_M7": 0.31590181221750946,
+      "contest_mean_brier_M7": 0.15731247165516385
+    },
+    {
+      "contest_type": "online",
+      "contests": 10,
+      "rows": 87906,
+      "share_of_rows": 0.2662898271506207,
+      "base_rate": 0.2733033012536118,
+      "brier_M6": 0.1454521565502308,
+      "brier_M7": 0.145737567287538,
+      "skill_M7": 0.26620719186246167,
+      "auc_M7": 0.8163609036254178,
+      "mean_p_M7": 0.2820745532384246,
+      "contest_mean_brier_M7": 0.14387648945479517
+    },
+    {
+      "contest_type": "provincial",
+      "contests": 64,
+      "rows": 86256,
+      "share_of_rows": 0.2612915538268598,
+      "base_rate": 0.24024995362641438,
+      "brier_M6": 0.1344092302422591,
+      "brier_M7": 0.13411636328361018,
+      "skill_M7": 0.2652362520813205,
+      "auc_M7": 0.821091132977146,
+      "mean_p_M7": 0.24189349703080237,
+      "contest_mean_brier_M7": 0.13374600954324994
+    },
+    {
+      "contest_type": "invitational",
+      "contests": 18,
+      "rows": 32335,
+      "share_of_rows": 0.09795101086291402,
+      "base_rate": 0.2725220349466522,
+      "brier_M6": 0.15102561540568096,
+      "brier_M7": 0.15013552955760195,
+      "skill_M7": 0.24271036330488815,
+      "auc_M7": 0.7998260807277427,
+      "mean_p_M7": 0.27438938111876265,
+      "contest_mean_brier_M7": 0.14995064344106318
+    },
+    {
+      "contest_type": "final",
+      "contests": 11,
+      "rows": 16880,
+      "share_of_rows": 0.05113385073035376,
+      "base_rate": 0.3287322274881517,
+      "brier_M6": 0.16457526816211104,
+      "brier_M7": 0.16236007892002013,
+      "skill_M7": 0.2642315283737975,
+      "auc_M7": 0.8041718775414719,
+      "mean_p_M7": 0.3115109992656733,
+      "contest_mean_brier_M7": 0.16595768653379658
+    },
+    {
+      "contest_type": "special",
+      "contests": 5,
+      "rows": 3966,
+      "share_of_rows": 0.012014031516385248,
+      "base_rate": 0.2705496722138174,
+      "brier_M6": 0.1460115173538258,
+      "brier_M7": 0.1454653268669051,
+      "skill_M7": 0.26291639494871544,
+      "auc_M7": 0.8194182119709849,
+      "mean_p_M7": 0.26135454297303395,
+      "contest_mean_brier_M7": 0.15218865998976097
+    }
+  ],
+  "composition": [
+    {
+      "eval_type": "regional",
+      "variant": "all types, M6 (current)",
+      "eval_contests": 56,
+      "train_contests_same_type": 45,
+      "brier": 0.1564930232320571,
+      "logloss": 0.47414376793399116,
+      "ece": 0.012364903848466549,
+      "roc_auc": 0.8173576405127019,
+      "contest_mean_brier": 0.15697493257088377
+    },
+    {
+      "eval_type": "regional",
+      "variant": "same type only, M6",
+      "eval_contests": 56,
+      "train_contests_same_type": 45,
+      "brier": 0.15903854124248457,
+      "logloss": 0.48108368923632083,
+      "ece": 0.007953221514465375,
+      "roc_auc": 0.8109009194479304,
+      "contest_mean_brier": 0.15960991809956807
+    },
+    {
+      "eval_type": "regional",
+      "variant": "all types, M7 (+type, structure)",
+      "eval_contests": 56,
+      "train_contests_same_type": 45,
+      "brier": 0.1565425796057605,
+      "logloss": 0.47422967874545413,
+      "ece": 0.005059263298205479,
+      "roc_auc": 0.8170405840612347,
+      "contest_mean_brier": 0.15702438176507244
+    },
+    {
+      "eval_type": "regional",
+      "variant": "all types, M7, equal contest weight",
+      "eval_contests": 56,
+      "train_contests_same_type": 45,
+      "brier": 0.15652536254170873,
+      "logloss": 0.4742655155029178,
+      "ece": 0.008184561609854285,
+      "roc_auc": 0.8172694047996845,
+      "contest_mean_brier": 0.15705555739121282
+    },
+    {
+      "eval_type": "regional",
+      "variant": "same type only, M7",
+      "eval_contests": 56,
+      "train_contests_same_type": 45,
+      "brier": 0.15919281256808315,
+      "logloss": 0.48144852604849553,
+      "ece": 0.0060890600129445555,
+      "roc_auc": 0.8107066528287098,
+      "contest_mean_brier": 0.15978738520702107
+    },
+    {
+      "eval_type": "invitational",
+      "variant": "all types, M6 (current)",
+      "eval_contests": 18,
+      "train_contests_same_type": 15,
+      "brier": 0.1497412940729084,
+      "logloss": 0.4598085331631222,
+      "ece": 0.011858788376734231,
+      "roc_auc": 0.8014290791085781,
+      "contest_mean_brier": 0.1495806252361463
+    },
+    {
+      "eval_type": "invitational",
+      "variant": "same type only, M6",
+      "eval_contests": 18,
+      "train_contests_same_type": 15,
+      "brier": 0.15654760858535172,
+      "logloss": 0.48157126958010665,
+      "ece": 0.024194572881868506,
+      "roc_auc": 0.7808222543185007,
+      "contest_mean_brier": 0.15612187105819741
+    },
+    {
+      "eval_type": "invitational",
+      "variant": "all types, M7 (+type, structure)",
+      "eval_contests": 18,
+      "train_contests_same_type": 15,
+      "brier": 0.14923602695968327,
+      "logloss": 0.45842790369839115,
+      "ece": 0.0038322741382082613,
+      "roc_auc": 0.8028090894668933,
+      "contest_mean_brier": 0.14903667210906335
+    },
+    {
+      "eval_type": "invitational",
+      "variant": "all types, M7, equal contest weight",
+      "eval_contests": 18,
+      "train_contests_same_type": 15,
+      "brier": 0.14998719999575336,
+      "logloss": 0.4601773568913535,
+      "ece": 0.0065880794166886265,
+      "roc_auc": 0.8007894177377588,
+      "contest_mean_brier": 0.14990135289276552
+    },
+    {
+      "eval_type": "invitational",
+      "variant": "same type only, M7",
+      "eval_contests": 18,
+      "train_contests_same_type": 15,
+      "brier": 0.15572541281950766,
+      "logloss": 0.4792356674821344,
+      "ece": 0.023169633630720325,
+      "roc_auc": 0.7832137576826953,
+      "contest_mean_brier": 0.15525534755258594
+    },
+    {
+      "eval_type": "provincial",
+      "variant": "all types, M6 (current)",
+      "eval_contests": 64,
+      "train_contests_same_type": 52,
+      "brier": 0.13410170096482102,
+      "logloss": 0.4172965201479016,
+      "ece": 0.013393149567213986,
+      "roc_auc": 0.8217353995441898,
+      "contest_mean_brier": 0.13382746630359932
+    },
+    {
+      "eval_type": "provincial",
+      "variant": "same type only, M6",
+      "eval_contests": 64,
+      "train_contests_same_type": 52,
+      "brier": 0.13773947214825968,
+      "logloss": 0.4285196791066677,
+      "ece": 0.011671518236741889,
+      "roc_auc": 0.8104040890289917,
+      "contest_mean_brier": 0.1373188346894605
+    },
+    {
+      "eval_type": "provincial",
+      "variant": "all types, M7 (+type, structure)",
+      "eval_contests": 64,
+      "train_contests_same_type": 52,
+      "brier": 0.133823699957291,
+      "logloss": 0.416604264380595,
+      "ece": 0.005190446139059064,
+      "roc_auc": 0.8218532723297365,
+      "contest_mean_brier": 0.13369886896832026
+    },
+    {
+      "eval_type": "provincial",
+      "variant": "all types, M7, equal contest weight",
+      "eval_contests": 64,
+      "train_contests_same_type": 52,
+      "brier": 0.13456577726286706,
+      "logloss": 0.41893490717737747,
+      "ece": 0.003501160955920724,
+      "roc_auc": 0.8194295881010705,
+      "contest_mean_brier": 0.13453834983144164
+    },
+    {
+      "eval_type": "provincial",
+      "variant": "same type only, M7",
+      "eval_contests": 64,
+      "train_contests_same_type": 52,
+      "brier": 0.13773826582046086,
+      "logloss": 0.42879015255181013,
+      "ece": 0.009605421594851588,
+      "roc_auc": 0.810103576605119,
+      "contest_mean_brier": 0.1374740714765073
+    }
+  ],
+  "deltas": [
+    {
+      "eval_type": "regional",
+      "candidate": "same type only, M6",
+      "brier_delta_vs_current": 0.002545518010427461,
+      "ci_lo": 0.001808001263826127,
+      "ci_hi": 0.003385467793496841
+    },
+    {
+      "eval_type": "regional",
+      "candidate": "all types, M7 (+type, structure)",
+      "brier_delta_vs_current": 4.955637370340771e-05,
+      "ci_lo": -0.0002772323142100026,
+      "ci_hi": 0.00038023016800599324
+    },
+    {
+      "eval_type": "regional",
+      "candidate": "all types, M7, equal contest weight",
+      "brier_delta_vs_current": 3.233930965163001e-05,
+      "ci_lo": -0.00032723141000455536,
+      "ci_hi": 0.0004901791929924833
+    },
+    {
+      "eval_type": "regional",
+      "candidate": "same type only, M7",
+      "brier_delta_vs_current": 0.0026997893360260483,
+      "ci_lo": 0.0021011136308926293,
+      "ci_hi": 0.0034525562159112987
+    },
+    {
+      "eval_type": "invitational",
+      "candidate": "same type only, M6",
+      "brier_delta_vs_current": 0.006806314512443318,
+      "ci_lo": 0.0008471080803217013,
+      "ci_hi": 0.011552141293526533
+    },
+    {
+      "eval_type": "invitational",
+      "candidate": "all types, M7 (+type, structure)",
+      "brier_delta_vs_current": -0.0005052671132251274,
+      "ci_lo": -0.0012523474638877034,
+      "ci_hi": 0.0002537363343882208
+    },
+    {
+      "eval_type": "invitational",
+      "candidate": "all types, M7, equal contest weight",
+      "brier_delta_vs_current": 0.0002459059228449578,
+      "ci_lo": -0.0006903908642559721,
+      "ci_hi": 0.0012550046486701214
+    },
+    {
+      "eval_type": "invitational",
+      "candidate": "same type only, M7",
+      "brier_delta_vs_current": 0.005984118746599265,
+      "ci_lo": 0.0005735270365842204,
+      "ci_hi": 0.0100028238770478
+    },
+    {
+      "eval_type": "provincial",
+      "candidate": "same type only, M6",
+      "brier_delta_vs_current": 0.003637771183438665,
+      "ci_lo": 0.0024950278432339856,
+      "ci_hi": 0.004869594204954111
+    },
+    {
+      "eval_type": "provincial",
+      "candidate": "all types, M7 (+type, structure)",
+      "brier_delta_vs_current": -0.0002780010075300321,
+      "ci_lo": -0.0007636924875484369,
+      "ci_hi": 0.000223898703814685
+    },
+    {
+      "eval_type": "provincial",
+      "candidate": "all types, M7, equal contest weight",
+      "brier_delta_vs_current": 0.00046407629804604,
+      "ci_lo": -0.00010134310968456585,
+      "ci_hi": 0.0010389900251727595
+    },
+    {
+      "eval_type": "provincial",
+      "candidate": "same type only, M7",
+      "brier_delta_vs_current": 0.0036365648556398456,
+      "ci_lo": 0.002631111332494212,
+      "ci_hi": 0.00462516865430372
+    }
+  ],
+  "discrimination": [
+    {
+      "disc_tertile": "low",
+      "contests": 55,
+      "discrimination": 0.3261134229959,
+      "base_rate": 0.2879795053903002,
+      "brier": 0.15121054485144467,
+      "skill": 0.2459110950617447,
+      "auc": 0.8054847711278585,
+      "abs_calib_gap": 0.02144417615382243
+    },
+    {
+      "disc_tertile": "mid",
+      "contests": 54,
+      "discrimination": 0.3900041831715459,
+      "base_rate": 0.29853229030949524,
+      "brier": 0.15057244751256574,
+      "skill": 0.2601286566255958,
+      "auc": 0.8134490928328127,
+      "abs_calib_gap": 0.022826702572397977
+    },
+    {
+      "disc_tertile": "high",
+      "contests": 55,
+      "discrimination": 0.46645181167239796,
+      "base_rate": 0.25884623238487825,
+      "brier": 0.13902009489557857,
+      "skill": 0.25610624269078924,
+      "auc": 0.8173906979869626,
+      "abs_calib_gap": 0.022094556404396656
+    }
+  ]
+}
