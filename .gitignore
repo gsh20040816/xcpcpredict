@@ -1,0 +1,23 @@
+# Python 环境与构建产物
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# 数据和模型体积大，都能用命令重新生成，不进仓库（见 docs/maintenance.md）
+/data/
+/models/
+
+# 命令的临时输出：文档示例写到 out/，standings 默认写到 standings_out/，
+# 单独跑的实验习惯写到 reports_<名字>/。确认要保留的结果再放进 reports/ 提交。
+/out/
+/standings_out/
+/reports_*/
+
+# 编辑器和系统文件
+.DS_Store
+.idea/
+.vscode/

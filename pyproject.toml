@@ -1,0 +1,28 @@
+[project]
+name = "xcpcpredict"
+version = "0.1.0"
+description = "Predict P(at least one AC) for frozen ICPC/XCPC scoreboard cells from public information"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "catboost",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+xcpcpredict = "xcpcpredict.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
