@@ -1,0 +1,25 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 最低支持版本和开发时使用的版本
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e '.[dev]'
+      # 测试只用合成数据；依赖 board-data 的那条在 CI 上会自动跳过
+      - run: pytest -q -rs
