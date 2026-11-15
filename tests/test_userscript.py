@@ -131,6 +131,15 @@ def test_standings_match_python_simulation(setup, tmp_path):
     assert np.abs(pl.reindex(both, fill_value=0) - jl.reindex(both, fill_value=0)).max() < 0.03
 
 
+def test_no_prediction_after_reveal(setup, tmp_path):
+    cfg, teams, runs, contest, bundle = setup
+    revealed = [dict(r, status="ACCEPTED" if int(r["id"]) % 3 == 0 else "WRONG_ANSWER") if r["status"] == "FROZEN" else r
+                for r in runs]
+    (frozen_js,) = run_js(tmp_path, bundle, cfg, teams, runs, [(300 * MIN, "A")], sims=0)
+    (revealed_js,) = run_js(tmp_path, bundle, cfg, teams, revealed, [(300 * MIN, "A")], sims=0)
+    assert frozen_js["status"] == "finished" and revealed_js == {"status": "revealed"}
+
+
 def test_userscript_parses(setup, tmp_path):
     *_, bundle = setup
     path = tmp_path / "x.user.js"

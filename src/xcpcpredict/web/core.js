@@ -788,7 +788,10 @@ const XP = (() => {
     const obs = Math.min(times.durationMs, nowMs - times.startMs);
     if (obs < times.freezeStartMs) return { status: "before_freeze", freezeAtMs: times.startMs + times.freezeStartMs };
     const mode = opts.mode || boardMode(cfg);
-    const snap = makeSnapshot(normalizeContest(contestId, cfg, rawTeams, rawRuns), obs, mode);
+    const contest = normalizeContest(contestId, cfg, rawTeams, rawRuns);
+    // once final verdicts of post-freeze runs are public, the board is revealed and nothing is left to predict
+    if (contest.subs.some((s) => s.t >= times.freezeStartMs && (s.v === AC || s.v === REJ))) return { status: "revealed" };
+    const snap = makeSnapshot(contest, obs, mode);
     const rows = extractFeatures(snap);
     const ps = predictProba(bundle.models[mode], rows);
     const cells = rows.map((r, i) => ({ team: r.team_id, problem: r.problem_id, hidden: r.hidden_count, p: ps[i] }));

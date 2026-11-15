@@ -179,6 +179,7 @@
     if (st.error) parts.push(`<div class="xp-err">${esc(st.error)}</div>`);
     if (!r) parts.push(`<div class="xp-mute">${st.error ? "" : "加载中…"}</div>`);
     else if (r.status === "no_freeze") parts.push(`<div class="xp-mute">这场比赛没有封榜。</div>`);
+    else if (r.status === "revealed") parts.push(`<div class="xp-mute">榜单已经解封，不再预测。</div>`);
     else if (r.status === "before_freeze") parts.push(`<div class="xp-mute">还没封榜，${new Date(r.freezeAtMs).toLocaleTimeString()} 封榜后开始预测。</div>`);
     else {
       parts.push(`<div>${r.status === "finished" ? "比赛已结束" : `封榜中，比赛时间 ${clock(r.observationMs)}`} · ${r.cells.length} 个冻结格子</div>`);
@@ -271,9 +272,9 @@
       s.updatedAt = new Date();
       s.error = null;
       if (result.status === "before_freeze") next = Math.min(10 * REFRESH_MS, Math.max(5000, result.freezeAtMs - Date.now() + 5000));
-      // after the end the frozen board no longer changes; one more pass picks up late-arriving runs
-      if (result.status === "no_freeze" || (result.status === "finished" && s.finalPass)) next = null;
-      if (result.status === "finished") s.finalPass = true;
+      // after the end only the reveal is left to notice
+      if (result.status === "finished") next = 5 * REFRESH_MS;
+      if (result.status === "no_freeze" || result.status === "revealed") next = null;
     } catch (e) {
       s.error = `预测失败：${e.message}`;
     } finally {
