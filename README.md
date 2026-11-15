@@ -92,6 +92,10 @@ xcpcpredict standings --input out/end.json --team Team139 --hypothetical 7 900 -
 
 实际比赛中，按 [`docs/usage.md`](docs/usage.md) 里的格式把公开榜单整理成 JSON，交给 `predict` 或 `standings`。
 
+## 浏览器用户脚本
+
+装好 [Tampermonkey](https://www.tampermonkey.net/) 后打开 <https://github.com/gsh20040816/xcpcpredict/releases/latest/download/xcpcpredict.user.js> 安装脚本。之后在 [XCPCIO 榜单](https://board.xcpcio.com) 上看比赛时，冻结格子会显示 AC 概率，队名下方显示奖牌概率，右下角面板给出各档奖牌线。模型嵌在脚本里，预测和排名模拟都在浏览器里完成。详见 [`docs/usage.md`](docs/usage.md#浏览器用户脚本)。
+
 ## 端到端复现
 
 下面的命令重新生成 `reports/` 里的全部报告和默认模型：
@@ -141,6 +145,9 @@ src/xcpcpredict/
   predict.py         JSON 快照转成每格 p_ac；模型文件读写
   standings.py       最终排名蒙特卡洛模拟
   standings_eval.py  最终排名回测
+  userscript.py      生成浏览器用户脚本，把模型导出成 JSON 嵌进去
+  web/core.js        预测流程的 JavaScript 移植：解析 XCPCIO 数据、特征、模型推断、排名模拟
+  web/board.js       用户脚本的页面部分：取数据、标注榜单、面板
   cli.py             命令行入口
 tests/               单元测试（除一条读取 board-data 的测试外，都用合成数据）
 reports/             实验报告（由命令生成，提交进仓库）
@@ -148,7 +155,7 @@ reports/             实验报告（由命令生成，提交进仓库）
 
 ## 文档
 
-- [`docs/usage.md`](docs/usage.md)：全部命令、输入输出格式、Mode A/B/C、排名模拟的输出
+- [`docs/usage.md`](docs/usage.md)：全部命令、输入输出格式、Mode A/B/C、排名模拟的输出、浏览器用户脚本
 - [`docs/results.md`](docs/results.md)：数据质量、模型评估、消融、比赛类型、学习曲线和排名回测的解读
 - [`docs/maintenance.md`](docs/maintenance.md)：更新数据、修改特征、训练和发布模型、版本号
 - [`docs/SPEC.md`](docs/SPEC.md)：实现前的需求与设计记录

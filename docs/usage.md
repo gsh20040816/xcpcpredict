@@ -17,6 +17,7 @@
 | `predict` | 预测每个冻结格子的 `p_ac` | `--model`、`--input`、`--format json/csv` | 标准输出 |
 | `standings` | 模拟最终排名、奖牌线和单队情景 | `--sims 10000`、`--team`、`--hypothetical`、`--out` | CSV 文件和标准输出 |
 | `standings-backtest` | 在测试赛上回测最终排名预测 | `--model`、`--sims 5000` | `standings_backtest.md`、`standings_backtest.csv` |
+| `export-userscript` | 生成在 board.xcpcio.com 上运行的 Tampermonkey 脚本，模型嵌在脚本里 | `--model`、`--out`、`--download-url` | `out/xcpcpredict.user.js` |
 
 各命令的默认路径如下：
 
@@ -138,3 +139,43 @@
 - `scenarios_<队伍>.csv`：指定 `--team` 时生成。列出这支队伍冻结格子所有过或不过的组合，包括每种组合的概率、最终过题数和罚时、排名分布和奖牌概率。冻结格子超过 8 个时，只取 `p_ac` 最高的 8 个。
 
 `--hypothetical 题数 罚时` 要和 `--team` 一起用。其他队伍照常模拟，输出这支队伍以给定题数和罚时（分钟）收尾时的排名分布。
+
+## 浏览器用户脚本
+
+用户脚本在 [XCPCIO 榜单](https://board.xcpcio.com) 上直接显示预测，不需要本地跑命令。模型嵌在脚本里，预测和模拟都在浏览器里完成。
+
+### 安装
+
+先装 [Tampermonkey](https://www.tampermonkey.net/)，再打开 <https://github.com/gsh20040816/xcpcpredict/releases/latest/download/xcpcpredict.user.js>，Tampermonkey 会弹出安装页面。这个地址指向最新的模型 release，Tampermonkey 会按它检查更新。
+
+也可以用自己训练的模型生成：
+
+```bash
+xcpcpredict export-userscript --model models/v4-all --out out/xcpcpredict.user.js
+```
+
+把生成的文件拖进 Tampermonkey 的管理页面即可安装。不加 `--download-url` 时脚本不会自动更新。
+
+### 页面上显示什么
+
+打开任意一场比赛的榜单，右下角会出现“封榜预测”面板。
+
+- **冻结格子**：从格子底部往上填充绿色，填充高度等于 `p_ac`，右上角标出百分比。鼠标悬停显示隐藏提交次数。
+- **队伍名**：底部一条细条按金、银、铜概率分段着色。鼠标悬停显示期望过题数、排名中位数和 90% 区间，以及各档奖牌概率。打星队伍不参与发奖，只显示排名。
+- **面板**：观察时刻、冻结格子数、模型版本、计算耗时，以及概率不低于 5% 的各档奖牌线（题数和罚时中位数）。“隐藏标注”恢复原始榜单，“刷新”立即重算，“–”收起面板。
+
+封榜前面板只显示封榜时间，到点后自动开始。封榜期间每分钟重算一次，页面在后台时暂停。比赛结束后再算一次就停止，之后榜单不会再变；需要时可以手动刷新。
+
+### 数据和计算
+
+- 脚本读取的是榜单页面本身也会加载的文件：`https://board.xcpcio.com/data/<比赛路径>/` 下的 `config.json`、`team.json`、`run.json` 和 `organizations.json`。`run.json` 封榜期间每分钟取一次，其余文件打开页面时取一次。数据不会发往别处。
+- 榜单显示待判提交的时间时（`status_time_display.pending` 没有设成 `false`，这也是 XCPCIO 的默认值）用 Mode A，否则用 Mode B。观察时刻取当前时间，比赛结束后取结束时刻。
+- 排名模拟默认 5000 次，随机种子固定，数据不变时每次刷新的结果相同。400 支队伍左右的比赛，`p_ac` 约 30 ms，模拟约 0.15 秒。
+- `src/xcpcpredict/web/core.js` 是 `normalize`、`replay`、`features`、模型推断和 `standings` 的 JavaScript 移植。在西安、南京、沈阳和一场 CCPC 上，它和 Python 算出的 `p_ac` 最大相差 2e-7；奖牌概率的差别在 1 万次模拟的抽样误差以内。
+
+### 限制
+
+- 只在 `board.xcpcio.com` 上运行。
+- 榜单行上没有队伍 ID，脚本按队名匹配，重名时再比对学校名。仍然无法区分的行不做标注。
+- 脚本依赖榜单表格的结构：表头的 `team-column`、`problem-column` 等 class，以及冻结格子的 `pending` class。XCPCIO 改版后标注可能失效，面板的计算不受影响。
+

@@ -175,6 +175,15 @@ def cmd_standings(args):
     print(f"\nwrote {args.out}")
 
 
+def cmd_export_userscript(args):
+    from .predict import ModelBundle
+    from .userscript import build_userscript
+
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(build_userscript(ModelBundle.load(args.model), args.download_url), encoding="utf-8")
+    print(f"wrote {args.out} ({args.out.stat().st_size / 1e6:.1f} MB)")
+
+
 def cmd_standings_backtest(args):
     from .evaluation import time_split
     from .predict import ModelBundle
@@ -270,6 +279,12 @@ def main(argv=None):
     sp.add_argument("--top", type=int, default=20)
     sp.add_argument("--out", type=Path, default=Path("standings_out"))
     sp.set_defaults(func=cmd_standings)
+
+    sp = sub.add_parser("export-userscript", help="Tampermonkey script that predicts in the browser on board.xcpcio.com")
+    sp.add_argument("--model", type=Path, default=DEFAULT_MODEL_DIR)
+    sp.add_argument("--out", type=Path, default=Path("out/xcpcpredict.user.js"))
+    sp.add_argument("--download-url", help="URL the script is published at; lets Tampermonkey check for updates")
+    sp.set_defaults(func=cmd_export_userscript)
 
     sp = sub.add_parser("standings-backtest", help="backtest final standings on held-out test contests")
     data_arg(sp)
