@@ -138,3 +138,62 @@ def test_userscript_parses(setup, tmp_path):
     text = path.read_text()
     assert "// @updateURL    https://example.com/x.user.js" in text
     subprocess.run([NODE, "--check", str(path)], check=True)
+
+
+def csg_rank(award_ratio=30020010, base=0):
+    """A tiny CSG-OJ rank.json: 5 h contest from 09:00 (UTC+8), 60 min freeze."""
+    sol = [  # (id, team, problem, wall clock, result)
+        (1, "T1", 101, "09:10:00", 6), (2, "T1", 101, "09:20:00", 11), (3, "T1", 101, "09:30:00", 4),
+        (4, "T1", 101, "09:40:00", 6), (5, "T1", 102, "13:30:00", -1), (6, "T2", 101, "10:00:00", 4),
+        (8, "T3", 102, "13:10:00", -1), (7, "T3", 102, "09:50:00", 2),
+    ]
+    return {
+        "contest": {"contest_id": 1, "title": "t", "start_time": "2026-11-15 09:00:00", "end_time": "2026-11-15 14:00:00",
+                    "frozen_minute": 60, "award_ratio": award_ratio, "flg_award_qty_mode": 0, "flg_award_base": base},
+        "team": [{"team_id": "T1", "name": "a", "school": "s1", "tkind": 0, "flg_girls": 0},
+                 {"team_id": "T2", "name": "b", "school": "s2", "tkind": 2, "flg_girls": 0},
+                 {"team_id": "T3", "name": "c", "school": "s3", "tkind": 0, "flg_girls": 1},
+                 {"team_id": "T4", "name": "d", "school": "s4", "tkind": 0, "flg_girls": 0}],
+        "problem": [{"problem_id": 102, "num": 1}, {"problem_id": 101, "num": 0}],
+        "solution": [{"solution_id": i, "team_id": t, "problem_id": p, "in_date": f"2026-11-15 {w}", "result": r}
+                     for i, t, p, w, r in sol],
+        "is_multi_group": 0,
+    }
+
+
+def from_csg(tmp_path, cases):
+    inp = tmp_path / "csg.json"
+    inp.write_text(json.dumps(cases))
+    script = tmp_path / "csg.js"
+    script.write_text(web_source("core.js") + """
+const cases = JSON.parse(require("fs").readFileSync(process.argv[2], "utf8"));
+process.stdout.write(JSON.stringify(cases.map(([rank, meta]) => XP.fromCsg(rank, meta))));
+""")
+    return json.loads(subprocess.run([NODE, str(script), str(inp)], capture_output=True, text=True, check=True).stdout)
+
+
+def test_csg_adapter(tmp_path):
+    meta = {"uuid": "u", "title": "第十二届中国大学生程序设计竞赛（测试）", "ckind": "ccpc", "level": "national",
+            "start_time": "2026-11-15T01:00:00Z"}
+    d, base1, base2, invite, prov, girl = from_csg(tmp_path, [
+        [csg_rank(), meta], [csg_rank(50, base=1), meta], [csg_rank(50, base=2), meta],
+        [csg_rank(), {**meta, "level": "national_invite"}], [csg_rank(), {**meta, "level": "provincial"}],
+        [csg_rank(), {**meta, "title": "CCPC 女生专场"}],
+    ])
+    cfg = d["cfg"]
+    assert cfg["start_time"] == 1_794_704_400_000  # 2026-11-15 09:00 UTC+8
+    assert cfg["end_time"] - cfg["start_time"] == 300 * MIN
+    assert cfg["frozen_time"] == 3600 and cfg["status_time_display"] == {"pending": True}
+    assert cfg["problems"] == [{"id": "101", "label": "A"}, {"id": "102", "label": "B"}]
+    # CE (2) and judging (7) dropped, the WA after T1's AC (4) ignored, frozen runs kept as FROZEN
+    assert [(r["id"], r["status"], r["timestamp"]) for r in d["runs"]] == [
+        ("1", "WRONG_ANSWER", 10 * MIN), ("3", "ACCEPTED", 30 * MIN), ("6", "ACCEPTED", 60 * MIN),
+        ("8", "FROZEN", 250 * MIN), ("5", "FROZEN", 270 * MIN)]
+    assert {t["id"]: t["group"] for t in d["teams"]} == {
+        "T1": ["official"], "T2": ["unofficial"], "T3": ["official", "girl"], "T4": ["official"]}
+    # award base: teams with a solve (moves with the simulation), with a submission (T1, T3), all official
+    assert cfg["medal"] == {"csg": {"ratios": [10, 20, 30], "qty": False}}
+    assert base1["cfg"]["medal"] == {"official": {"gold": 1, "silver": 0, "bronze": 0}}  # ceil(2 * 50%)
+    assert base2["cfg"]["medal"] == {"official": {"gold": 2, "silver": 0, "bronze": 0}}  # ceil(3 * 50%)
+    assert (d["contestId"], invite["contestId"], prov["contestId"], girl["contestId"]) == (
+        "ccpc/u", "ccpc/invitational/u", "provincial-contest/u", "ccpc/girl/u")

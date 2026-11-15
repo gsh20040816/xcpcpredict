@@ -1,5 +1,6 @@
-// Board overlay for board.xcpcio.com: fetches the contest's public data files, runs XP.run in the page
-// and draws p_ac on every pending cell plus medal odds on every team. Uses XP (core.js) and XP_MODEL.
+// Board overlay: fetches the contest's public data, runs XP.run in the page and draws p_ac on every pending
+// cell plus medal odds on every team. Supports board.xcpcio.com and the CSG-OJ outrank at rank.iccpc.cn.
+// Uses XP (core.js) and XP_MODEL.
 (() => {
   "use strict";
 
@@ -7,14 +8,129 @@
   const SIMS = 5000;
   const SEP = "\u0001";
 
+  const texts = (v) => (v && typeof v === "object" && v.texts ? Object.values(v.texts).map(String) : v == null ? [] : [String(v)]);
+  const norm = (s) => s.replace(/\s+/g, " ").trim();
+  const pct = (p) => `${Math.round(p * 100)}%`;
+  const clock = (ms) => { const m = Math.floor(ms / 60000); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  async function getJSON(url) {
+    const r = await fetch(url, { cache: "no-cache" });
+    if (!r.ok) throw new Error(`${url.split("/").pop()}: HTTP ${r.status}`);
+    return r.json();
+  }
+
+  // --------------------------------------------------------------------- sites
+  // A site knows where a contest's data lives and where its rows and cells are on the page:
+  //   key()     identifies the contest page; a change means navigation to another contest
+  //   init(s)   false when the page is not a contest board; throws when loading fails
+  //   load(s)   fresh {contestId, cfg, teams, runs} for XP.run
+  //   rows(s)   rendered rows: [{team, teamEl, cells: [{problem, el, pending}]}]
+  //   css       makes room in a cell for the percentage chip
+
+  // board.xcpcio.com: rows carry no team id, so a row is matched by team name, and by organization
+  // name when several teams share a name. Problem columns follow the header.
+  const XCPCIO = {
+    host: "board.xcpcio.com",
+    key: () => location.pathname.replace(/\/+$/, ""),
+    async init(s) {
+      const get = (f) => getJSON(/^https?:\/\//.test(f) ? f : `${location.origin}/data${s.key}/${f}`);
+      let cfg;
+      try {
+        cfg = await get("config.json");
+      } catch {
+        return false;
+      }
+      if (!cfg || !cfg.start_time || !Array.isArray(cfg.problems)) return false;
+      const orgFile = cfg.organizations?.url;
+      const [teams, orgs] = await Promise.all([get("team.json"), orgFile ? get(orgFile) : null]);
+      const orgName = new Map((orgs || []).map((o) => [String(o.id), texts(o.name)]));
+      const list = Array.isArray(teams) ? teams : Object.entries(teams).map(([k, v]) => ({ ...v, team_id: v.team_id ?? k }));
+      const nameIndex = new Map();
+      for (const t of list) {
+        const id = String(t.team_id ?? t.id);
+        const org = orgName.get(String(t.organization_id)) || texts(t.organization);
+        for (const name of texts(t.name)) (nameIndex.get(norm(name)) || nameIndex.set(norm(name), []).get(norm(name))).push({ id, org });
+      }
+      Object.assign(s, { get, cfg, teams, nameIndex, problemIds: cfg.problems.map((p, i) => String(p.id ?? i)) });
+      return true;
+    },
+    async load(s) {
+      return { contestId: s.key.slice(1), cfg: s.cfg, teams: s.teams, runs: await s.get("run.json") };
+    },
+    rows(s) {
+      const table = document.querySelector("table.standings");
+      const ths = table?.tHead ? [...table.tHead.rows[0].cells] : [];
+      const teamCol = ths.findIndex((th) => th.classList.contains("team-column"));
+      const placeCol = ths.findIndex((th) => th.classList.contains("place-column"));
+      const probCols = ths.flatMap((th, i) => (th.classList.contains("problem-column") ? [i] : []));
+      if (teamCol < 0 || probCols.length !== s.problemIds.length) return [];
+      const orgCol = teamCol - placeCol === 2 ? placeCol + 1 : -1;
+      const identify = (teamTd, orgTd) => {
+        const span = [...teamTd.querySelectorAll("span")].find((x) => x.textContent.trim());
+        const cands = s.nameIndex.get(norm((span || teamTd).textContent));
+        if (!cands) return null;
+        if (cands.length === 1) return cands[0].id;
+        const ctx = `${orgTd ? orgTd.textContent : ""} ${teamTd.textContent}`;
+        const hit = cands.filter((c) => c.org.some((o) => o && ctx.includes(o)));
+        return hit.length === 1 ? hit[0].id : null;
+      };
+      return [...table.querySelectorAll("tbody > tr")]
+        .filter((tr) => tr.cells.length === ths.length) // rows off screen are not rendered
+        .map((tr) => {
+          const tds = tr.cells;
+          return {
+            team: identify(tds[teamCol], orgCol >= 0 ? tds[orgCol] : null),
+            teamEl: tds[teamCol],
+            cells: probCols.map((col, k) => ({ problem: s.problemIds[k], el: tds[col], pending: tds[col].classList.contains("pending") })),
+          };
+        });
+    },
+    css: `[data-xp] > div:first-child > div:first-child { align-self: flex-start; padding-left: 3px; font-size: 11px; }`,
+  };
+
+  // rank.iccpc.cn: the page boots with OR_BOOT (Prefetch is the rank.json snapshot). Rows carry the
+  // team id, cells the problem letter.
+  const CSG = {
+    host: "rank.iccpc.cn",
+    key: () => location.pathname,
+    async init(s) {
+      const boot = window.OR_BOOT;
+      if (!/^\/r\//.test(location.pathname) || !boot || !boot.Prefetch) return false;
+      s.boot = boot;
+      return true;
+    },
+    async load(s) {
+      const d = XP.fromCsg(await getJSON(new URL(s.boot.Prefetch, location.origin).href), s.boot.Outrank || {});
+      s.problemOf = new Map(d.cfg.problems.map((p) => [p.label, p.id]));
+      return d;
+    },
+    rows(s) {
+      return [...document.querySelectorAll("[data-row-id]")]
+        .filter((row) => (row.getAttribute("data-rank-mode") || "team") === "team") // not school or roll mode
+        .map((row) => ({
+          team: row.getAttribute("data-row-id"),
+          teamEl: row.querySelector(".team-info-section"),
+          cells: [...row.querySelectorAll("[d-pro-idx]")].map((el) => ({
+            problem: s.problemOf?.get(el.getAttribute("d-pro-idx")), el, pending: el.classList.contains("pro-pending"),
+          })),
+        }));
+    },
+    // the site's own rules are more specific, hence !important
+    css: `[data-xp] .problem-content, [data-xp] .rank-plain-problem-lines { padding-right: 19px !important; }
+      [data-xp] .time-brief { font-size: .85em; }`,
+  };
+
+  const site = [XCPCIO, CSG].find((x) => x.host === location.hostname);
+  if (!site) return;
+
   let st = null; // per-contest state, replaced on navigation
   let show = true;
 
   const css = `
     :root { --xp-fill: rgba(22, 163, 74, .38); --xp-text: #065f46; --xp-chip: rgba(255, 255, 255, .85); --xp-bg: #fff; --xp-fg: #111827; --xp-mute: #6b7280; --xp-line: #e5e7eb; }
-    html.dark { --xp-fill: rgba(34, 197, 94, .35); --xp-text: #86efac; --xp-chip: rgba(17, 24, 39, .85); --xp-bg: #1f2937; --xp-fg: #f3f4f6; --xp-mute: #9ca3af; --xp-line: #374151; }
-    td[data-xp] { position: relative; }
-    td[data-xp] > div:first-child > div:first-child { align-self: flex-start; padding-left: 3px; font-size: 11px; }
+    html.dark, html[data-theme="dark"] { --xp-fill: rgba(34, 197, 94, .35); --xp-text: #86efac; --xp-chip: rgba(17, 24, 39, .85); --xp-bg: #1f2937; --xp-fg: #f3f4f6; --xp-mute: #9ca3af; --xp-line: #374151; }
+    [data-xp] { position: relative; }
     .xp-p { position: absolute; top: 1px; right: 1px; padding: 1px 2px; border-radius: 3px; background: var(--xp-chip);
       font: 700 10px/1 ui-monospace, monospace; color: var(--xp-text); pointer-events: none; }
     .xp-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; display: flex; pointer-events: none; }
@@ -32,21 +148,8 @@
     .xp-err { color: #dc2626; }
     .xp-body table { border-collapse: collapse; width: 100%; margin-top: 4px; }
     .xp-body td { padding: 1px 4px 1px 0; vertical-align: top; }
+    ${site.css}
   `;
-
-  const contestPath = () => location.pathname.replace(/\/+$/, "");
-  const texts = (v) => (v && typeof v === "object" && v.texts ? Object.values(v.texts).map(String) : v == null ? [] : [String(v)]);
-  const norm = (s) => s.replace(/\s+/g, " ").trim();
-  const pct = (p) => `${Math.round(p * 100)}%`;
-  const clock = (ms) => { const m = Math.floor(ms / 60000); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
-  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-
-  async function getJSON(path, file) {
-    const url = /^https?:\/\//.test(file) ? file : `${location.origin}/data${path}/${file}`;
-    const r = await fetch(url, { cache: "no-cache" });
-    if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`);
-    return r.json();
-  }
 
   // ------------------------------------------------------------------ panel
   function mountPanel() {
@@ -96,87 +199,50 @@
   }
 
   // ------------------------------------------------------------- board cells
-  // Rows carry no team id, so a row is matched by its team name, and by organization name when
-  // several teams share a name.
-  function buildNameIndex(rawTeams, orgs) {
-    const orgName = new Map((orgs || []).map((o) => [String(o.id), texts(o.name)]));
-    const list = Array.isArray(rawTeams) ? rawTeams : Object.entries(rawTeams).map(([k, v]) => ({ ...v, team_id: v.team_id ?? k }));
-    const index = new Map();
-    for (const t of list) {
-      const id = String(t.team_id ?? t.id);
-      const org = orgName.get(String(t.organization_id)) || texts(t.organization);
-      for (const name of texts(t.name)) {
-        const k = norm(name);
-        (index.get(k) || index.set(k, []).get(k)).push({ id, org });
-      }
-    }
-    return index;
-  }
-
-  function identify(teamTd, orgTd) {
-    const span = [...teamTd.querySelectorAll("span")].find((s) => s.textContent.trim());
-    const cands = st.nameIndex.get(norm((span || teamTd).textContent));
-    if (!cands) return null;
-    if (cands.length === 1) return cands[0].id;
-    const ctx = `${orgTd ? orgTd.textContent : ""} ${teamTd.textContent}`;
-    const hit = cands.filter((c) => c.org.some((o) => o && ctx.includes(o)));
-    return hit.length === 1 ? hit[0].id : null;
-  }
-
-  function decorateCell(td, id, problem) {
-    const pred = show && id && td.classList.contains("pending") ? st.cellPred.get(id + SEP + problem) : undefined;
+  function decorateCell(el, id, problem, pending) {
+    const pred = show && id && pending ? st.cellPred.get(id + SEP + problem) : undefined;
     const sig = pred ? `${id}|${problem}|${pred.p.toFixed(4)}` : "";
-    if ((td.dataset.xp || "") === sig) return;
-    let badge = td.querySelector(":scope > .xp-p");
+    if ((el.dataset.xp || "") === sig) return;
+    let badge = el.querySelector(":scope > .xp-p");
     if (!pred) {
       badge?.remove();
-      td.style.removeProperty("background-image");
-      td.removeAttribute("title");
-      delete td.dataset.xp;
+      el.style.removeProperty("background-image");
+      el.removeAttribute("title");
+      delete el.dataset.xp;
       return;
     }
-    td.dataset.xp = sig;
+    el.dataset.xp = sig;
     const v = Math.round(pred.p * 100);
-    td.style.backgroundImage = `linear-gradient(to top, var(--xp-fill) ${v}%, transparent ${v}%)`;
-    if (!badge) { badge = document.createElement("div"); badge.className = "xp-p"; td.appendChild(badge); }
+    el.style.backgroundImage = `linear-gradient(to top, var(--xp-fill) ${v}%, transparent ${v}%)`;
+    if (!badge) { badge = document.createElement("div"); badge.className = "xp-p"; el.appendChild(badge); }
     badge.textContent = `${v}%`;
-    td.title = `封榜后 AC 概率 ${v}%（隐藏提交 ${pred.hidden} 次）`;
+    el.title = `封榜后 AC 概率 ${v}%（隐藏提交 ${pred.hidden} 次）`;
   }
 
-  function decorateTeam(td, id) {
+  function decorateTeam(el, id) {
     const s = show && id ? st.teamPred.get(id) : undefined;
     const sig = s ? `${id}|${s.expectedSolved.toFixed(3)}|${s.rankP50}|${s.pMedal}` : "";
-    if ((td.dataset.xpTeam || "") === sig) return;
-    let bar = td.querySelector(":scope > .xp-bar");
-    if (!s) { bar?.remove(); td.removeAttribute("title"); delete td.dataset.xpTeam; return; }
-    td.dataset.xpTeam = sig;
+    if ((el.dataset.xpTeam || "") === sig) return;
+    let bar = el.querySelector(":scope > .xp-bar");
+    if (!s) { bar?.remove(); el.removeAttribute("title"); delete el.dataset.xpTeam; return; }
+    el.dataset.xpTeam = sig;
     let tip = `预测：期望 ${s.expectedSolved.toFixed(2)} 题，排名中位数 ${Math.round(s.rankP50)}（90% 区间 ${Math.round(s.rankP05)}–${Math.round(s.rankP95)}）`;
     if (s.pMedal !== null) {
       tip += `\n金 ${pct(s.pGold)} · 银 ${pct(s.pSilver)} · 铜 ${pct(s.pBronze)}`;
-      if (!bar) { bar = document.createElement("div"); bar.className = "xp-bar"; bar.innerHTML = '<i class="g"></i><i class="s"></i><i class="b"></i>'; td.appendChild(bar); }
+      if (!bar) { bar = document.createElement("div"); bar.className = "xp-bar"; bar.innerHTML = '<i class="g"></i><i class="s"></i><i class="b"></i>'; el.appendChild(bar); }
       const [g, sv, b] = bar.children;
       g.style.width = pct(s.pGold); sv.style.width = pct(s.pSilver); b.style.width = pct(s.pBronze);
     } else {
       bar?.remove();
     }
-    td.title = tip;
+    el.title = tip;
   }
 
   function applyBoard() {
-    if (!st || !st.result || !st.cellPred) return;
-    const table = document.querySelector("table.standings");
-    const ths = table?.tHead ? [...table.tHead.rows[0].cells] : [];
-    const teamCol = ths.findIndex((th) => th.classList.contains("team-column"));
-    const placeCol = ths.findIndex((th) => th.classList.contains("place-column"));
-    const probCols = ths.flatMap((th, i) => (th.classList.contains("problem-column") ? [i] : []));
-    if (teamCol < 0 || probCols.length !== st.problemIds.length) return;
-    const orgCol = teamCol - placeCol === 2 ? placeCol + 1 : -1;
-    for (const tr of table.querySelectorAll("tbody > tr")) {
-      const tds = tr.cells;
-      if (tds.length !== ths.length) continue; // row not rendered (off screen)
-      const id = identify(tds[teamCol], orgCol >= 0 ? tds[orgCol] : null);
-      decorateTeam(tds[teamCol], id);
-      probCols.forEach((col, k) => decorateCell(tds[col], id, st.problemIds[k]));
+    if (!st || !st.cellPred) return;
+    for (const r of site.rows(st)) {
+      if (r.teamEl) decorateTeam(r.teamEl, r.team);
+      for (const c of r.cells) decorateCell(c.el, r.team, c.problem, c.pending);
     }
   }
 
@@ -187,19 +253,19 @@
     clearTimeout(s.timer);
     let next = REFRESH_MS;
     try {
-      const now = Date.now();
-      const times = XP.contestTimes(s.cfg);
+      const t = s.times, now = Date.now();
       let result;
-      if (times.hasFreeze && now - times.startMs >= times.freezeStartMs) {
-        const runs = await getJSON(s.path, "run.json");
-        if (s !== st) return;
-        const t0 = performance.now();
-        result = XP.run(XP_MODEL, s.path.slice(1), s.cfg, s.rawTeams, runs, Date.now(), { sims: SIMS });
-        s.elapsedMs = performance.now() - t0;
-        s.cellPred = new Map(result.cells.map((c) => [c.team + SEP + c.problem, c]));
-        s.teamPred = new Map(result.teams.map((t) => [t.team, t]));
+      if (t && t.hasFreeze && now - t.startMs < t.freezeStartMs) {
+        result = { status: "before_freeze", freezeAtMs: t.startMs + t.freezeStartMs };
       } else {
-        result = XP.run(XP_MODEL, s.path.slice(1), s.cfg, s.rawTeams, [], now, { sims: 0 });
+        const d = await site.load(s);
+        if (s !== st) return;
+        s.times = XP.contestTimes(d.cfg);
+        const t0 = performance.now();
+        result = XP.run(XP_MODEL, d.contestId, d.cfg, d.teams, d.runs, Date.now(), { sims: SIMS });
+        s.elapsedMs = performance.now() - t0;
+        s.cellPred = new Map((result.cells || []).map((c) => [c.team + SEP + c.problem, c]));
+        s.teamPred = new Map((result.teams || []).map((x) => [x.team, x]));
       }
       s.result = result;
       s.updatedAt = new Date();
@@ -219,32 +285,20 @@
     if (next !== null) s.timer = setTimeout(() => (document.hidden ? (s.stale = true) : refresh(s)), next);
   }
 
-  async function enter(path) {
+  async function enter(key) {
     if (st) clearTimeout(st.timer);
     document.querySelector(".xp-panel")?.remove();
-    const s = { path, busy: false };
+    const s = { key, busy: false };
     st = s;
-    let cfg;
     try {
-      cfg = await getJSON(path, "config.json");
-    } catch {
-      return; // not a contest page
-    }
-    if (s !== st || !cfg || !cfg.start_time || !Array.isArray(cfg.problems)) return;
-    s.cfg = cfg;
-    s.problemIds = cfg.problems.map((p, i) => String(p.id ?? i));
-    renderPanel();
-    try {
-      const orgFile = cfg.organizations?.url;
-      const [rawTeams, orgs] = await Promise.all([getJSON(path, "team.json"), orgFile ? getJSON(path, orgFile) : null]);
-      if (s !== st) return;
-      s.rawTeams = rawTeams;
-      s.nameIndex = buildNameIndex(rawTeams, orgs);
+      if (!(await site.init(s)) || s !== st) return; // not a contest page
     } catch (e) {
-      s.error = `加载队伍失败：${e.message}`;
+      if (s !== st) return;
+      s.error = `加载失败：${e.message}`;
       renderPanel();
       return;
     }
+    renderPanel();
     refresh(s);
   }
 
@@ -259,8 +313,8 @@
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && st?.stale) { st.stale = false; refresh(st); }
   });
-  // the board is a single-page app: follow navigation between contests
-  const follow = () => { if (!st || contestPath() !== st.path) enter(contestPath()); };
+  // single-page apps: follow navigation between contests
+  const follow = () => { if (!st || site.key() !== st.key) enter(site.key()); };
   follow();
   setInterval(follow, 1000);
 })();

@@ -142,7 +142,7 @@
 
 ## 浏览器用户脚本
 
-用户脚本在 [XCPCIO 榜单](https://board.xcpcio.com) 上直接显示预测，不需要本地跑命令。模型嵌在脚本里，预测和模拟都在浏览器里完成。
+用户脚本在 [XCPCIO 榜单](https://board.xcpcio.com) 和 [CCPC 外榜](https://rank.iccpc.cn)（CSG-OJ）上直接显示预测，不需要本地跑命令。模型嵌在脚本里，预测和模拟都在浏览器里完成。
 
 ### 安装
 
@@ -158,7 +158,7 @@ xcpcpredict export-userscript --model models/v4-all --out out/xcpcpredict.user.j
 
 ### 页面上显示什么
 
-打开任意一场比赛的榜单，右下角会出现“封榜预测”面板。
+打开任意一场比赛的榜单（XCPCIO 的比赛页，或 CCPC 外榜 `/r/<比赛>` 页），右下角会出现“封榜预测”面板。
 
 - **冻结格子**：从格子底部往上填充绿色，填充高度等于 `p_ac`，右上角标出百分比。鼠标悬停显示隐藏提交次数。
 - **队伍名**：底部一条细条按金、银、铜概率分段着色。鼠标悬停显示期望过题数、排名中位数和 90% 区间，以及各档奖牌概率。打星队伍不参与发奖，只显示排名。
@@ -168,14 +168,24 @@ xcpcpredict export-userscript --model models/v4-all --out out/xcpcpredict.user.j
 
 ### 数据和计算
 
-- 脚本读取的是榜单页面本身也会加载的文件：`https://board.xcpcio.com/data/<比赛路径>/` 下的 `config.json`、`team.json`、`run.json` 和 `organizations.json`。`run.json` 封榜期间每分钟取一次，其余文件打开页面时取一次。数据不会发往别处。
-- 榜单显示待判提交的时间时（`status_time_display.pending` 没有设成 `false`，这也是 XCPCIO 的默认值）用 Mode A，否则用 Mode B。观察时刻取当前时间，比赛结束后取结束时刻。
+- 脚本读取的是榜单页面本身也会加载的数据，封榜期间每分钟取一次，数据不会发往别处。
+  - XCPCIO：`https://board.xcpcio.com/data/<比赛路径>/` 下的 `run.json`；`config.json`、`team.json` 和 `organizations.json` 只在打开页面时取一次。
+  - CCPC 外榜：页面 `OR_BOOT.Prefetch` 指向的 `rank.json` 快照，比赛、队伍、题目和提交都在里面。
+- XCPCIO 的榜单显示待判提交的时间时（`status_time_display.pending` 没有设成 `false`，这也是 XCPCIO 的默认值）用 Mode A，否则用 Mode B。CCPC 外榜点开格子能看到每次提交的时间，用 Mode A。观察时刻取当前时间，比赛结束后取结束时刻。
+- CCPC 外榜的数据按榜单自己的口径转换（`core.js` 的 `fromCsg`）：
+  - 结果码 4 为 AC，5–10 为计罚时的错误，-1 为封榜后的提交。编译错误（11）和评测中的提交（0–3）不显示，丢掉。同一题可见的 AC 之后的提交也忽略。
+  - 罚时按秒累加，每次错误加 20 分钟，最后折成分钟。
+  - `tkind=2` 是打星队，`tkind=1` 或 `flg_girls=1` 是女队。
+  - 奖牌按比赛设置：比例或名额（`flg_award_qty_mode`），基数（`flg_award_base`）可以是过题队、交过题的队或全部正式队，名次线和榜单一样按累计比例向上取整。前两种基数在模拟里固定；按过题队算时，每次模拟重新数基数。
+  - 设了多个奖项分组（`is_multi_group`）的比赛不算奖牌概率。
 - 排名模拟默认 5000 次，随机种子固定，数据不变时每次刷新的结果相同。400 支队伍左右的比赛，`p_ac` 约 30 ms，模拟约 0.15 秒。
 - `src/xcpcpredict/web/core.js` 是 `normalize`、`replay`、`features`、模型推断和 `standings` 的 JavaScript 移植。在西安、南京、沈阳和一场 CCPC 上，它和 Python 算出的 `p_ac` 最大相差 2e-7；奖牌概率的差别在 1 万次模拟的抽样误差以内。
 
 ### 限制
 
-- 只在 `board.xcpcio.com` 上运行。
-- 榜单行上没有队伍 ID，脚本按队名匹配，重名时再比对学校名。仍然无法区分的行不做标注。
-- 脚本依赖榜单表格的结构：表头的 `team-column`、`problem-column` 等 class，以及冻结格子的 `pending` class。XCPCIO 改版后标注可能失效，面板的计算不受影响。
+- 只在 `board.xcpcio.com` 和 `rank.iccpc.cn` 上运行。
+- XCPCIO 的榜单行上没有队伍 ID，脚本按队名匹配，重名时再比对学校名。仍然无法区分的行不做标注。CCPC 外榜的行带队伍 ID（`data-row-id`），格子带题号（`d-pro-idx`），直接对应。
+- CCPC 外榜只标注“队伍排名”视图，学校排名和滚榜视图不标注。
+- CCPC 外榜在封榜前会隐藏还没被足够多队伍做出的题；只在封榜后预测，这时所有题都已公开。
+- 脚本依赖榜单的页面结构：XCPCIO 表头的 `team-column`、`problem-column` 等 class 和冻结格子的 `pending` class；CCPC 外榜的 `data-row-id`、`d-pro-idx`、`pro-pending` 和 `.team-info-section`。网站改版后标注可能失效，面板的计算不受影响。
 

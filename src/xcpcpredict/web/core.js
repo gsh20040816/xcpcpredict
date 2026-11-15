@@ -70,6 +70,7 @@ const XP = (() => {
 
   function parseMedalRule(raw) {
     if (typeof raw === "string") return raw.toLowerCase() === "ccpc" ? { ratio: [0.1, 0.2, 0.3] } : null;
+    if (raw && raw.csg) return { csg: raw.csg }; // set by fromCsg
     if (raw && typeof raw === "object") {
       const counts = {};
       for (const [g, v] of Object.entries(raw)) {
@@ -78,6 +79,33 @@ const XP = (() => {
       return Object.keys(counts).length ? { counts } : null;
     }
     return null;
+  }
+
+  // CSG-OJ award lines (port of RankToolGetAwardRank): cumulative ranks [gold, silver, bronze] for `base`
+  // eligible teams. Percent mode rounds each cumulative line up in integer arithmetic; a value >= 100 there
+  // means (value - 100) teams. Quantity mode takes the three values as team counts.
+  function csgCuts(base, ratios, qty) {
+    const B = Math.max(0, Math.floor(base));
+    if (B <= 0) return [0, 0, 0];
+    const [g, s, b] = ratios.map((v) => Math.max(0, Math.floor(v)));
+    if (qty) {
+      const nG = Math.min(g, B), nS = Math.min(s, B - nG), nB = Math.min(b, B - nG - nS);
+      return [nG, nG + nS, nG + nS + nB];
+    }
+    let acc = 0, line = 0;
+    return [g, s, b].map((v) => {
+      if (v >= 100) { line = Math.min(B, line + v - 100); acc = line * 100; }
+      else { acc += B * v; line = Math.min(B, Math.floor((acc + 99) / 100)); }
+      return line;
+    });
+  }
+
+  // Cumulative medal lines of one group; nValid = members with at least one solve.
+  function medalCuts(rule, group, nValid) {
+    if (rule.counts) { const [a, b, c] = rule.counts[group]; return [a, a + b, a + b + c]; }
+    if (rule.csg) return csgCuts(nValid, rule.csg.ratios, rule.csg.qty);
+    const [a, b, c] = rule.ratio.map((f) => Math.ceil(f * nValid));
+    return [a, a + b, a + b + c];
   }
 
   // Start, duration and freeze from config.json alone (no runs needed).
@@ -294,15 +322,14 @@ const XP = (() => {
     const medal = new Map();
     const rule = snap.medalRule;
     if (rule) {
+      const inGroup = (t, g) => (snap.groups.get(t) || []).includes(g);
       const groups = rule.counts
-        ? Object.keys(rule.counts).map((g) => [g, g === "all" ? boardTeams : boardTeams.filter((t) => (snap.groups.get(t) || []).includes(g))])
-        : [["_ratio", boardTeams.filter((t) => !(activeSet.has(t) && flag(t, STAR_MARKERS) === 1))]];
+        ? Object.keys(rule.counts).map((g) => [g, g === "all" ? boardTeams : boardTeams.filter((t) => inGroup(t, g))])
+        : rule.csg ? [["official", boardTeams.filter((t) => inGroup(t, "official"))]]
+          : [["_ratio", boardTeams.filter((t) => !(activeSet.has(t) && flag(t, STAR_MARKERS) === 1))]];
       for (const [g, members] of groups) {
         if (!members.length) continue;
-        const [a, b, c] = rule.counts
-          ? rule.counts[g]
-          : rule.ratio.map((f) => Math.ceil(f * members.filter((t) => keyOf(t)[0] < 0).length));
-        const cuts = [a, a + b, a + b + c];
+        const cuts = medalCuts(rule, g, members.filter((t) => keyOf(t)[0] < 0).length);
         const sk = members.map(keyOf).sort(cmpKey);
         for (const t of members) if (!medal.has(t)) medal.set(t, [sk, cuts]);
       }
@@ -586,15 +613,16 @@ const XP = (() => {
     // medal groups
     const groupsOf = (t) => snap.groups.get(t) || [];
     const rule = snap.medalRule;
-    const medalGroups = !rule ? [] : rule.counts
-      ? Object.keys(rule.counts).map((g) => [g, teams.flatMap((t, i) => (g === "all" || groupsOf(t).includes(g) ? [i] : []))])
-      : [["_ratio", teams.flatMap((t, i) => (hasMarker(groupsOf(t), STAR_MARKERS) ? [] : [i]))]];
+    const membersOf = (g) => teams.flatMap((t, i) => (g === "all" || groupsOf(t).includes(g) ? [i] : []));
+    const medalGroups = !rule ? [] : rule.counts ? Object.keys(rule.counts).map((g) => [g, membersOf(g)])
+      : rule.csg ? [["official", membersOf("official")]]
+        : [["_ratio", teams.flatMap((t, i) => (hasMarker(groupsOf(t), STAR_MARKERS) ? [] : [i]))]];
     const groups = medalGroups.filter(([, m]) => m.length).map(([name, members]) => {
       const memberOf = new Int32Array(n).fill(-1);
       members.forEach((i, j) => { memberOf[i] = j; });
       return {
         name, members: Int32Array.from(members), memberOf, tierCount: new Float64Array(members.length * 4),
-        lines: TIERS.map(() => new Map()), cuts: [0, 0, 0], seen: 0, prevScore: NaN, prevRank: 0,
+        lines: TIERS.map(() => new Map()), cuts: null, seen: 0, prevScore: NaN, prevRank: 0,
       };
     });
 
@@ -613,8 +641,7 @@ const XP = (() => {
       for (const g of groups) {
         let nValid = 0;
         for (const i of g.members) if (solved[i] > 0) nValid += 1;
-        const [a, b, c] = rule.counts ? rule.counts[g.name] : rule.ratio.map((f) => Math.ceil(nValid * f));
-        g.cuts[0] = a; g.cuts[1] = a + b; g.cuts[2] = a + b + c;
+        g.cuts = medalCuts(rule, g.name, nValid);
         g.seen = 0; g.prevScore = NaN;
       }
       // walk from the best score down; rank = 1 + number of strictly better scores
@@ -674,6 +701,80 @@ const XP = (() => {
     return { teams: out, lines };
   }
 
+  // ---------------------------------------------- CSG-OJ outrank (rank.iccpc.cn)
+  // rank.json of a CSG-OJ public board -> {contestId, cfg, teams, runs} in the XCPCIO shape used above.
+  // meta is the page's OR_BOOT.Outrank: {uuid, title, ckind, level, start_time (ISO, UTC)}.
+  const CSG_STATUS = {
+    4: "ACCEPTED", 5: "PRESENTATION_ERROR", 6: "WRONG_ANSWER", 7: "TIME_LIMIT_EXCEEDED",
+    8: "MEMORY_LIMIT_EXCEEDED", 9: "OUTPUT_LIMIT_EXCEEDED", 10: "RUNTIME_ERROR",
+  };
+
+  // An id that classifyContest maps to the right contest type.
+  function csgContestId(meta, contest) {
+    const kind = meta.ckind === "icpc" ? "icpc" : "ccpc", key = meta.uuid || contest.contest_id;
+    const title = meta.title || contest.title || "", level = meta.level || "national";
+    if (/网络|online/i.test(title)) return `${kind}/online/${key}`;
+    if (/女生|girl/i.test(title)) return `${kind}/girl/${key}`;
+    if (/总决赛|final/i.test(title)) return `${kind}/${key}/final`;
+    if (level.startsWith("provincial")) return `provincial-contest/${key}`;
+    if (level === "national_invite") return `${kind}/invitational/${key}`;
+    if (level === "national") return `${kind}/${key}`;
+    return `csg/${key}`;
+  }
+
+  function fromCsg(rank, meta = {}) {
+    const c = rank.contest;
+    // times are wall-clock strings in the contest's time zone; only differences are needed, plus the
+    // absolute start (from the page, default UTC+8)
+    const wall = (v) => Date.parse(`${String(v).trim().replace(" ", "T")}Z`);
+    const start = wall(c.start_time);
+    const offset = meta.start_time ? Date.parse(meta.start_time) - start : -8 * 3600 * 1000;
+    const teams = rank.team.map((t) => {
+      const group = [Number(t.tkind) === 2 ? "unofficial" : "official"];
+      if (Number(t.tkind) === 1 || Number(t.flg_girls) === 1) group.push("girl");
+      return { id: String(t.team_id), name: t.name, organization: t.school, group };
+    });
+    // what the board shows: CE and still-judging runs are dropped, runs after a visible AC are ignored
+    const sols = [...rank.solution].sort((a, b) => wall(a.in_date) - wall(b.in_date) || a.solution_id - b.solution_id);
+    const solved = new Set(), runs = [];
+    for (const s of sols) {
+      const r = Number(s.result), cell = `${s.team_id}\u0001${s.problem_id}`;
+      if (!(r < 0 || r in CSG_STATUS) || solved.has(cell)) continue;
+      if (r === 4) solved.add(cell);
+      runs.push({
+        id: String(s.solution_id), team_id: String(s.team_id), problem_id: String(s.problem_id),
+        timestamp: wall(s.in_date) - start, status: r < 0 ? "FROZEN" : CSG_STATUS[r],
+      });
+    }
+    // medals: one award setting for official teams; separate settings per group are not modelled
+    let medal = null;
+    if (!Number(rank.is_multi_group)) {
+      const code = Number(c.award_ratio) || 0;
+      const ratios = code ? [code % 1000, Math.floor(code / 1000) % 1000, Math.floor(code / 1e6) % 1000] : [10, 20, 30];
+      const qty = Number(c.flg_award_qty_mode) === 1;
+      const base = Number(c.flg_award_base) || 0; // 0: teams with a solve, 1: teams with a submission, 2: all
+      if (base === 0) {
+        medal = { csg: { ratios, qty } }; // the base moves as frozen cells resolve
+      } else {
+        const submitted = new Set(rank.solution.map((s) => String(s.team_id)));
+        const official = teams.filter((t) => t.group.includes("official") && (base === 2 || submitted.has(t.id)));
+        const [g, sv, b] = csgCuts(official.length, ratios, qty);
+        medal = { official: { gold: g, silver: sv - g, bronze: b - sv } };
+      }
+    }
+    const cfg = {
+      contest_name: meta.title || c.title,
+      start_time: start + offset, end_time: wall(c.end_time) + offset,
+      frozen_time: (Number(c.frozen_minute) || 0) * 60, penalty: 1200,
+      problems: [...rank.problem].sort((a, b) => a.num - b.num)
+        .map((p) => ({ id: String(p.problem_id), label: String.fromCharCode(65 + Number(p.num)) })),
+      medal,
+      status_time_display: { pending: true }, // every hidden run's time is listed in the cell popover
+      options: { submission_timestamp_unit: "millisecond", calculation_of_penalty: "accumulate_in_seconds_and_finally_to_the_minute" },
+    };
+    return { contestId: csgContestId(meta, c), cfg, teams, runs };
+  }
+
   // --------------------------------------------------------------- one call
   // Mode A when the board shows the time of pending runs (XCPCIO's default), otherwise Mode B.
   function boardMode(cfg) {
@@ -698,7 +799,7 @@ const XP = (() => {
     };
   }
 
-  return { normalizeContest, makeSnapshot, extractFeatures, predictProba, simulateStandings, contestTimes, boardMode, run };
+  return { normalizeContest, makeSnapshot, extractFeatures, predictProba, simulateStandings, contestTimes, boardMode, run, fromCsg };
 })();
 
 if (typeof module !== "undefined" && module.exports) module.exports = XP;

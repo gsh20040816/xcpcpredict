@@ -1,8 +1,9 @@
-"""Tampermonkey userscript that runs the predictor in the browser on board.xcpcio.com.
+"""Tampermonkey userscript that runs the predictor in the browser on public scoreboards.
 
 The calibrated CatBoost models are embedded as plain oblivious trees. ``web/core.js`` ports
-normalization, feature extraction and the standings simulation; ``web/board.js`` reads the
-board's public data files and draws p_ac and medal odds on the page.
+normalization, feature extraction, the standings simulation and the CSG-OJ data adapter;
+``web/board.js`` reads the board's public data and draws p_ac and medal odds on the page
+(board.xcpcio.com and rank.iccpc.cn).
 """
 
 from __future__ import annotations
@@ -21,8 +22,9 @@ HEADER = """\
 // @name         xcpcpredict 封榜过题概率
 // @namespace    xcpcpredict
 // @version      {version}
-// @description  在 XCPCIO 榜单的冻结格子上显示 AC 概率，并模拟最终排名和奖牌线（模型 {model_version}，特征 {feature_version}）
+// @description  在 XCPCIO 榜单和 CCPC 外榜的冻结格子上显示 AC 概率，并模拟最终排名和奖牌线（模型 {model_version}，特征 {feature_version}）
 // @match        https://board.xcpcio.com/*
+// @match        https://rank.iccpc.cn/r/*
 // @grant        none
 // @run-at       document-idle
 // @noframes
