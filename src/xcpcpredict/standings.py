@@ -1,9 +1,12 @@
 """Final-standings simulation from per-cell p_ac.
 
-Each frozen cell passes independently with its predicted p_ac. If it passes, the AC is taken
-to be the cell's last hidden submission: on tier A/B history that is exact for 93% of AC
-frozen cells (penalty exact in 92%, mean over-estimate 5.5 min otherwise). Without hidden
-times (Mode B) the AC time is taken as the middle of [freeze, observation].
+Each frozen cell passes with its marginal predicted p_ac, coupled across cells of the same team,
+the same problem, and the contest via a Gaussian copula (so unobserved team form and problem
+difficulty shifts widen rank intervals appropriately without altering marginal cell probabilities).
+If a cell passes, the AC is taken to be the cell's last hidden submission: on tier A/B history
+that is exact for 93% of AC frozen cells (penalty exact in 92%, mean over-estimate 5.5 min
+otherwise). Without hidden times (Mode B) the AC time is taken as the middle of
+[freeze, observation].
 
 Submissions after the observation time are not modelled, so the result is the final board
 only when the observation time is the contest end; earlier it is "the board if nothing else
@@ -25,6 +28,47 @@ from .normalize import Verdict
 from .replay import MODE_FULL_TIMES, PublicSnapshot
 
 TIERS = ("gold", "silver", "bronze")
+# Variance shares of the unit-variance Gaussian copula latent variable per cell.
+COPULA_TEAM = 0.08
+COPULA_PROBLEM = 0.02
+COPULA_CONTEST = 0.01
+
+
+def _norm_ppf(p: np.ndarray) -> np.ndarray:
+    """Acklam's rational approximation to the standard normal inverse CDF (max error < 1.15e-9)."""
+    p = np.asarray(p, dtype=float)
+    out = np.empty_like(p)
+    out[p <= 0] = -np.inf
+    out[p >= 1] = np.inf
+    m = (p > 0) & (p < 1)
+    pm = p[m]
+    a = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+         1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+    b = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+         6.680131188771972e+01, -1.328068155288572e+01)
+    c = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+         -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+    d = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+         3.754408661907416e+00)
+    p_low = 0.02425
+    z = np.empty_like(pm)
+    mid = (pm >= p_low) & (pm <= 1 - p_low)
+    if mid.any():
+        q = pm[mid] - 0.5
+        r = q * q
+        z[mid] = (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (
+            ((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0
+        )
+    tail = ~mid
+    if tail.any():
+        pt = pm[tail]
+        q = np.sqrt(-2.0 * np.log(np.where(pt < p_low, pt, 1.0 - pt)))
+        zt = (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
+            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1.0
+        )
+        z[tail] = np.where(pt < p_low, zt, -zt)
+    out[m] = z
+    return out
 
 
 def scoreboard(runs, penalty_ms: int, penalty_rule: str) -> tuple[dict[str, int], dict[str, int]]:
@@ -109,9 +153,22 @@ class Simulation:
 
 def simulate(board: Board, n_sims: int = 10000, seed: int = 0) -> Simulation:
     rng = np.random.default_rng(seed)
-    outcomes = rng.random((n_sims, len(board.cell_p))) < board.cell_p
-    onehot = np.zeros((len(board.cell_p), len(board.teams)))
-    onehot[np.arange(len(board.cell_p)), board.cell_team] = 1
+    n_cells = len(board.cell_p)
+    if n_cells == 0:
+        outcomes = np.zeros((n_sims, 0), dtype=bool)
+    else:
+        thresh = _norm_ppf(board.cell_p)
+        probs_uniq, prob_idx = np.unique(board.cell_problem, return_inverse=True)
+        w_eps = 1.0 - COPULA_TEAM - COPULA_PROBLEM - COPULA_CONTEST
+        z = (
+            math.sqrt(w_eps) * rng.standard_normal((n_sims, n_cells))
+            + math.sqrt(COPULA_CONTEST) * rng.standard_normal((n_sims, 1))
+            + math.sqrt(COPULA_PROBLEM) * rng.standard_normal((n_sims, len(probs_uniq)))[:, prob_idx]
+            + math.sqrt(COPULA_TEAM) * rng.standard_normal((n_sims, len(board.teams)))[:, board.cell_team]
+        )
+        outcomes = z < thresh
+    onehot = np.zeros((n_cells, len(board.teams)))
+    onehot[np.arange(n_cells), board.cell_team] = 1
     solved = board.solved0 + outcomes.astype(float) @ onehot
     penalty = board.pen0 + (outcomes * board.cell_pen) @ onehot
     return Simulation(solved.astype(int), penalty, outcomes)

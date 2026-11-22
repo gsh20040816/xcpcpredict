@@ -575,11 +575,48 @@ const XP = (() => {
     return s[lo] + (h - lo) * (s[hi] - s[lo]);
   }
 
+  const COPULA_TEAM = 0.08, COPULA_PROBLEM = 0.02, COPULA_CONTEST = 0.01;
+
+  // Acklam's rational approximation to the standard normal inverse CDF (max error < 1.15e-9).
+  function normPpf(p) {
+    if (p <= 0) return -Infinity;
+    if (p >= 1) return Infinity;
+    const pLow = 0.02425;
+    if (p >= pLow && p <= 1 - pLow) {
+      const q = p - 0.5, r = q * q;
+      return (((((-3.969683028665376e1 * r + 2.209460984245205e2) * r - 2.759285104469687e2) * r
+        + 1.383577518672690e2) * r - 3.066479806614716e1) * r + 2.506628277459239) * q
+        / (((((-5.447609879822406e1 * r + 1.615858368580409e2) * r - 1.556989798598866e2) * r
+          + 6.680131188771972e1) * r - 1.328068155288572e1) * r + 1);
+    }
+    const q = Math.sqrt(-2 * Math.log(p < pLow ? p : 1 - p));
+    const z = (((((-7.784894002430293e-3 * q - 3.223964580411365e-1) * q - 2.400758277161838) * q
+      - 2.549732539343734) * q + 4.374664141464968) * q + 2.938163982698783)
+      / ((((7.784695709041462e-3 * q + 3.224671290700398e-1) * q + 2.445134137142996) * q
+        + 3.754408661907416) * q + 1);
+    return p < pLow ? z : -z;
+  }
+
+  function normalRng(random) {
+    let spare = NaN;
+    return () => {
+      if (!Number.isNaN(spare)) { const v = spare; spare = NaN; return v; }
+      let u = 0, v = 0;
+      while (u <= 1e-15) u = random();
+      v = random();
+      const mag = Math.sqrt(-2 * Math.log(u)), ang = 2 * Math.PI * v;
+      spare = mag * Math.sin(ang);
+      return mag * Math.cos(ang);
+    };
+  }
+
   // cells: [{team, problem, p}] for the frozen cells of `snap`.
   function simulateStandings(snap, cells, nSims = 10000, seed = 1) {
     const teams = [...new Set(snap.teamIds)].sort();
     const idx = new Map(teams.map((t, i) => [t, i]));
     const n = teams.length;
+    const probIds = [...new Set(cells.map((c) => c.problem))].sort();
+    const probIdx = new Map(probIds.map((p, i) => [p, i]));
     // visible scoreboard at the freeze
     const byCell = new Map();
     for (const s of snap.subs) getOr(byCell, `${s.team}\u0001${s.prob}`, () => ({ team: s.team, vis: [], hidden: [] }))[s.v === null ? "hidden" : "vis"].push(s);
@@ -600,14 +637,16 @@ const XP = (() => {
     for (let i = 0; i < n; i++) pen0[i] = Math.floor(penMs[i] / 60000);
     // an AC frozen cell is taken at its last hidden submission (Mode B: middle of [freeze, observation])
     const mid = Math.floor((snap.fz + snap.obs) / 2), penMin = snap.penaltyMs / 60000;
-    const cellTeam = new Int32Array(cells.length), cellP = new Float64Array(cells.length), cellPen = new Float64Array(cells.length);
+    const cellTeam = new Int32Array(cells.length), cellProb = new Int32Array(cells.length);
+    const cellThresh = new Float64Array(cells.length), cellPen = new Float64Array(cells.length);
     cells.forEach((cell, k) => {
       const c = byCell.get(`${cell.team}\u0001${cell.problem}`);
       const times = c.hidden.map((s) => s.t);
       const tAc = snap.mode === "A" ? Math.max(...times) : mid;
       const tPart = snap.penaltyRule === "in_minutes" ? Math.floor(tAc / 60000) : tAc / 60000;
       const preWa = c.vis.filter((s) => s.v === REJ).length;
-      cellTeam[k] = idx.get(cell.team); cellP[k] = cell.p; cellPen[k] = tPart + penMin * (preWa + times.length - 1);
+      cellTeam[k] = idx.get(cell.team); cellProb[k] = probIdx.get(cell.problem);
+      cellThresh[k] = normPpf(cell.p); cellPen[k] = tPart + penMin * (preWa + times.length - 1);
     });
 
     // medal groups
@@ -628,13 +667,22 @@ const XP = (() => {
 
     // Scores are integers, so score * M + team index sorts by score and keeps the team recoverable.
     const M = 2 ** Math.ceil(Math.log2(n + 1));
-    const random = rng(seed);
+    const randn = normalRng(rng(seed));
+    const sTeam = Math.sqrt(COPULA_TEAM), sProb = Math.sqrt(COPULA_PROBLEM), sContest = Math.sqrt(COPULA_CONTEST);
+    const sEps = Math.sqrt(1 - COPULA_TEAM - COPULA_PROBLEM - COPULA_CONTEST);
+    const zTeam = new Float64Array(n), zProb = new Float64Array(probIds.length);
     const solved = new Float64Array(n), pen = new Float64Array(n), keys = new Float64Array(n);
     const rankHist = new Float64Array(n * (n + 1)), rankSum = new Float64Array(n), solvedSum = new Float64Array(n), solvedSq = new Float64Array(n);
     for (let sim = 0; sim < nSims; sim++) {
       solved.set(solved0); pen.set(pen0);
-      for (let k = 0; k < cellP.length; k++) {
-        if (random() < cellP[k]) { solved[cellTeam[k]] += 1; pen[cellTeam[k]] += cellPen[k]; }
+      if (cellThresh.length) {
+        const zC = sContest * randn();
+        for (let i = 0; i < n; i++) zTeam[i] = sTeam * randn();
+        for (let j = 0; j < zProb.length; j++) zProb[j] = sProb * randn();
+        for (let k = 0; k < cellThresh.length; k++) {
+          const z = zC + zTeam[cellTeam[k]] + zProb[cellProb[k]] + sEps * randn();
+          if (z < cellThresh[k]) { solved[cellTeam[k]] += 1; pen[cellTeam[k]] += cellPen[k]; }
+        }
       }
       for (let i = 0; i < n; i++) keys[i] = (solved[i] * 1e6 - Math.floor(pen[i])) * M + i;
       keys.sort();
@@ -734,16 +782,17 @@ const XP = (() => {
       if (Number(t.tkind) === 1 || Number(t.flg_girls) === 1) group.push("girl");
       return { id: String(t.team_id), name: t.name, organization: t.school, group };
     });
-    // what the board shows: CE and still-judging runs are dropped, runs after a visible AC are ignored
+    // what the board shows: CE and still-judging runs are dropped, runs after a pre-freeze visible AC are ignored
+    const freezeTs = (wall(c.end_time) - start) - (Number(c.frozen_minute) || 0) * 60000;
     const sols = [...rank.solution].sort((a, b) => wall(a.in_date) - wall(b.in_date) || a.solution_id - b.solution_id);
     const solved = new Set(), runs = [];
     for (const s of sols) {
-      const r = Number(s.result), cell = `${s.team_id}\u0001${s.problem_id}`;
+      const r = Number(s.result), cell = `${s.team_id}\u0001${s.problem_id}`, ts = wall(s.in_date) - start;
       if (!(r < 0 || r in CSG_STATUS) || solved.has(cell)) continue;
-      if (r === 4) solved.add(cell);
+      if (r === 4 && ts < freezeTs) solved.add(cell);
       runs.push({
         id: String(s.solution_id), team_id: String(s.team_id), problem_id: String(s.problem_id),
-        timestamp: wall(s.in_date) - start, status: r < 0 ? "FROZEN" : CSG_STATUS[r],
+        timestamp: ts, status: r < 0 ? "FROZEN" : CSG_STATUS[r],
       });
     }
     // medals: one award setting for official teams; separate settings per group are not modelled
