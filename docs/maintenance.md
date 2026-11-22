@@ -33,14 +33,15 @@ python3 -m venv .venv
 
 ## 更新数据
 
-当前报告和默认模型使用的数据版本是 `ingest.BOARD_DATA_REV`，即 board-data 的 release `v2026.11.11.2057`。`xcpcpredict fetch` 默认检出这个版本。
+当前报告使用的数据基准版本是 `ingest.BOARD_DATA_REV`，即 board-data 的 release `v2026.11.11.2057`。`xcpcpredict fetch` 默认检出这个版本。
 
-换用更新的数据：
+平时上游发布新比赛、而模型架构与特征没有变化时，只需用新数据更新部署模型和用户脚本，不必重跑 `reports/`：
 
 1. 在 [board-data 的 tags](https://github.com/xcpcio/board-data/tags) 里找到新的 release，运行 `xcpcpredict fetch --rev <tag>`。
-2. 运行 `xcpcpredict audit`，看新比赛分在哪一档。档位不对时，在 `audit.csv` 的 `reasons` 列查原因。
-3. 运行 `xcpcpredict build` 重建数据集。board-data 的 commit 会作为数据版本记进数据集，之后的报告和模型元数据都会带上它。
-4. 决定用新数据作为正式结果时，把 `ingest.BOARD_DATA_REV` 改成新 tag，按 README 的“端到端复现”重跑全部实验，训练新版本的模型，把代码、报告和文档一起提交。
+2. 运行 `xcpcpredict build` 重建 `data/dataset.pkl`。board-data 的 commit 会作为数据版本记进数据集和模型 `meta.json`。
+3. 按下文“训练和发布模型”训练 `--all-contests` 部署模型、导出 `out/xcpcpredict.user.js` 并发布 GitHub Release。
+
+只有模型架构或特征更新、需要刷新基准评估时，才把 `ingest.BOARD_DATA_REV` 改成新 tag，按 README 的“端到端复现”重跑 `reports/` 里的全部实验，把代码、报告和文档一起提交。
 
 ## 重跑实验
 
